@@ -4,11 +4,13 @@ import { hashTreeAccessCode } from "@/lib/security/access-code";
 import { hasTrustedOrigin } from "@/lib/security/same-origin";
 import { hasSupabaseConfig } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { updateDemoTreeSettings } from "@/lib/demo/store";
+import { demoStoreErrorResponse } from "@/lib/demo/response";
 
 const updateSchema = z.object({
   expectedVersion: z.number().int().nonnegative(),
   name: z.string().trim().min(2).max(120),
-  rootPersonId: z.string().min(3).max(100),
+  rootPersonId: z.string().min(1).max(100),
   visibility: z.enum(["public", "protected"]),
   accessCode: z.string().min(4).max(100).optional()
 });
@@ -19,7 +21,16 @@ export async function PATCH(request: Request, context: { params: Promise<{ treeI
   const { treeId } = await context.params;
   const parsed = updateSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Thiết lập phả đồ không hợp lệ." }, { status: 400 });
-  if (!hasSupabaseConfig()) return NextResponse.json({ updated: true, graphVersion: parsed.data.expectedVersion + 1, demo: true });
+  if (!hasSupabaseConfig()) {
+    if (parsed.data.visibility === "protected" && !process.env.DEMO_TREE_ACCESS_CODE) {
+      return NextResponse.json({ error: "Hãy cấu hình DEMO_TREE_ACCESS_CODE trong .env.local trước khi bật mã bảo mật." }, { status: 400 });
+    }
+    try {
+      return NextResponse.json({ ...await updateDemoTreeSettings(treeId, parsed.data), demo: true });
+    } catch (error) {
+      return demoStoreErrorResponse(error);
+    }
+  }
   const accessHash = parsed.data.accessCode ? await hashTreeAccessCode(parsed.data.accessCode) : null;
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase.rpc("update_family_tree_settings", {

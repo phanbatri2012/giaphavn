@@ -4,9 +4,10 @@ Nền tảng SaaS nhiều dòng họ để dựng phả đồ, lưu ký ức và
 
 ## Bản chạy hiện tại
 
-Không cần biến môi trường để xem dữ liệu mẫu:
+Tạo cấu hình local từ file mẫu rồi chạy development server:
 
-```bash
+```powershell
+Copy-Item .env.example .env.local
 npm install
 npm run dev
 ```
@@ -19,7 +20,9 @@ Các địa chỉ chính:
 - `http://localhost:3000/app` — dashboard quản trị (dữ liệu mẫu nếu chưa cấu hình Supabase).
 - `http://localhost:3000/app/ops` — dashboard operator; production yêu cầu allowlist + MFA AAL2.
 
-Khi chưa có Supabase, ứng dụng tự chuyển sang repository demo chỉ đọc; thao tác thêm người trong phả đồ chỉ tồn tại trong phiên trình duyệt. Khi có đủ biến môi trường Supabase, auth, RLS, tenant và transaction thật được dùng.
+Khi chưa có Supabase và `LOCAL_DEMO_PERSISTENCE=true`, ứng dụng dùng kho dữ liệu local tại `.data/demo-state.json`. Thao tác thêm/sửa/lưu trữ/phục hồi thành viên, tạo/gỡ quan hệ và đổi thiết lập phả đồ được giữ sau khi tải lại hoặc khởi động lại server. Thư mục `.data` không được đưa lên Git. Có thể khôi phục bộ dữ liệu ban đầu tại **Cài đặt → Dữ liệu thử nghiệm local**.
+
+Đây là chế độ phát triển trên một máy, không phải database dùng chung. Khi cấu hình đủ biến môi trường Supabase, ứng dụng tự chuyển sang Auth, RLS và transaction PostgreSQL thật.
 
 ## Phạm vi đã hiện thực
 
@@ -44,7 +47,7 @@ Khi chưa có Supabase, ứng dụng tự chuyển sang repository demo chỉ đ
 - Migration Supabase, RLS, Storage policy, audit bất biến, cross-tenant triggers và transaction functions.
 - Vitest, Playwright desktop/mobile, pgTAP RLS và GitHub Actions CI.
 
-Chế độ không có Supabase là bản demo để duyệt giao diện và không thay thế kiểm thử tích hợp. Khi có Supabase, các màn quản trị dùng dữ liệu thật và mọi mutation đi qua RLS/RPC phía server. Chính sách pháp lý hiện là bản nháp, phải được chuyên gia Việt Nam duyệt trước public launch.
+Chế độ không có Supabase là bản demo local để duyệt giao diện và thử các nghiệp vụ phả đồ cốt lõi; nó không thay thế kiểm thử tích hợp database/RLS. Khi có Supabase, các màn quản trị dùng dữ liệu thật và mọi mutation đi qua RLS/RPC phía server. Chính sách pháp lý hiện là bản nháp, phải được chuyên gia Việt Nam duyệt trước public launch.
 
 ## Cấu hình Supabase
 

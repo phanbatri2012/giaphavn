@@ -4,6 +4,8 @@ import { normalizeVietnameseName } from "@/lib/domain/genealogy";
 import { hasTrustedOrigin } from "@/lib/security/same-origin";
 import { hasSupabaseConfig } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { updateDemoPerson } from "@/lib/demo/store";
+import { demoStoreErrorResponse } from "@/lib/demo/response";
 
 const partialDate = z.object({ value: z.string().max(10), precision: z.enum(["year", "month", "day"]), calendar: z.enum(["solar", "lunar"]) }).optional();
 const schema = z.object({
@@ -31,7 +33,14 @@ export async function PATCH(request: Request, context: { params: Promise<{ treeI
   const { treeId, personId } = await context.params;
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Hồ sơ thành viên không hợp lệ.", details: parsed.error.flatten() }, { status: 400 });
-  if (!hasSupabaseConfig()) return NextResponse.json({ updated: true, graphVersion: parsed.data.expectedVersion + 1, demo: true });
+  if (!hasSupabaseConfig()) {
+    try {
+      const result = await updateDemoPerson(treeId, personId, parsed.data);
+      return NextResponse.json({ ...result, demo: true });
+    } catch (error) {
+      return demoStoreErrorResponse(error);
+    }
+  }
   const supabase = await createSupabaseServerClient();
   const { data: scopedPerson } = await supabase.from("persons").select("id").eq("id", personId).eq("tree_id", treeId).maybeSingle();
   if (!scopedPerson) return NextResponse.json({ error: "Không tìm thấy thành viên." }, { status: 404 });

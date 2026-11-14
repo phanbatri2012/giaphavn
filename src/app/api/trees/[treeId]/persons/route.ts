@@ -4,6 +4,8 @@ import { normalizeVietnameseName } from "@/lib/domain/genealogy";
 import { hasSupabaseConfig } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { hasTrustedOrigin } from "@/lib/security/same-origin";
+import { addDemoPerson, changeDemoPersonLifecycle } from "@/lib/demo/store";
+import { demoStoreErrorResponse } from "@/lib/demo/response";
 
 const personSchema = z.object({
   expectedVersion: z.number().int().nonnegative(),
@@ -22,8 +24,14 @@ export async function POST(request: Request, context: { params: Promise<{ treeId
   const parsed = personSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Dữ liệu thành viên không hợp lệ.", details: parsed.error.flatten() }, { status: 400 });
   if (!hasSupabaseConfig()) {
-    if (parsed.data.expectedVersion < 12) return NextResponse.json({ error: "Phả đồ đã thay đổi.", code: "VERSION_CONFLICT", currentVersion: 12 }, { status: 409 });
-    return NextResponse.json({ id: crypto.randomUUID(), graphVersion: parsed.data.expectedVersion + 1, demo: true }, { status: 201 });
+    const anchorId = parsed.data.anchorId ?? parsed.data.parentId;
+    if (!anchorId) return NextResponse.json({ error: "Thành viên liên kết không hợp lệ." }, { status: 400 });
+    try {
+      const result = await addDemoPerson(treeId, { ...parsed.data, anchorId });
+      return NextResponse.json({ ...result, demo: true }, { status: 201 });
+    } catch (error) {
+      return demoStoreErrorResponse(error);
+    }
   }
   const anchorId = parsed.data.anchorId ?? parsed.data.parentId;
   if (!anchorId || !z.string().uuid().safeParse(anchorId).success) return NextResponse.json({ error: "Thành viên liên kết không hợp lệ." }, { status: 400 });
@@ -45,7 +53,7 @@ export async function POST(request: Request, context: { params: Promise<{ treeId
   return NextResponse.json(data, { status: 201 });
 }
 
-const lifecycleSchema = z.object({ personId: z.string().uuid(), expectedVersion: z.number().int().nonnegative() });
+const lifecycleSchema = z.object({ personId: z.string().min(1).max(100), expectedVersion: z.number().int().nonnegative() });
 
 async function lifecycle(request: Request, context: { params: Promise<{ treeId: string }> }, action: "archive" | "restore") {
   if (!hasTrustedOrigin(request)) return NextResponse.json({ error: "Nguồn yêu cầu không hợp lệ." }, { status: 403 });
@@ -53,9 +61,14 @@ async function lifecycle(request: Request, context: { params: Promise<{ treeId: 
   const parsed = lifecycleSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Yêu cầu không hợp lệ." }, { status: 400 });
   if (!hasSupabaseConfig()) {
-    if (treeId !== "tree-demo-main") return NextResponse.json({ error: "Không tìm thấy phả đồ." }, { status: 404 });
-    return NextResponse.json({ [action === "archive" ? "archived" : "restored"]: true, graphVersion: parsed.data.expectedVersion + 1, demo: true });
+    try {
+      const result = await changeDemoPersonLifecycle(treeId, parsed.data.personId, parsed.data.expectedVersion, action);
+      return NextResponse.json({ ...result, demo: true });
+    } catch (error) {
+      return demoStoreErrorResponse(error);
+    }
   }
+  if (!z.string().uuid().safeParse(parsed.data.personId).success) return NextResponse.json({ error: "Yêu cầu không hợp lệ." }, { status: 400 });
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase.rpc(action === "archive" ? "soft_delete_person_with_version" : "restore_person_with_version", { p_person_id: parsed.data.personId, p_expected_version: parsed.data.expectedVersion });
   if (error?.message.includes("VERSION_CONFLICT")) return NextResponse.json({ error: "Phả đồ đã thay đổi.", code: "VERSION_CONFLICT" }, { status: 409 });

@@ -5,7 +5,12 @@ import path from "node:path";
 const root = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
-  resolve: { alias: { "@": path.resolve(root, "src") } },
+  resolve: {
+    alias: {
+      "@": path.resolve(root, "src"),
+      "server-only": path.resolve(root, "tests/server-only.ts")
+    }
+  },
   test: {
     include: ["tests/unit/**/*.test.ts"],
     environment: "node",

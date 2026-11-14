@@ -7,6 +7,7 @@ import { verifyTreeAccessCookie } from "@/lib/security/access-code";
 import { cookies } from "next/headers";
 import { sanitizeContentHtml } from "@/lib/security/sanitize-content";
 import type { Person, PersonPublicFields } from "@/lib/domain/types";
+import { getDemoTree } from "@/lib/demo/store";
 
 type DbTenant = {
   id: string;
@@ -96,7 +97,12 @@ function mapPublicSnapshotPerson(row: Record<string, unknown>, alreadyProjected:
 }
 
 export async function getTenantSnapshot(slug: string): Promise<TenantSnapshot | null> {
-  if (!hasSupabaseConfig()) return slug === demoSnapshot.tenant.slug ? structuredClone(demoSnapshot) : null;
+  if (!hasSupabaseConfig()) {
+    if (slug !== demoSnapshot.tenant.slug) return null;
+    const snapshot = structuredClone(demoSnapshot);
+    snapshot.tree = await getDemoTree();
+    return snapshot;
+  }
 
   const supabase = await createSupabaseServerClient();
   const queryClient = createSupabaseAdminClient() ?? supabase;

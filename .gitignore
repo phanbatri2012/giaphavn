@@ -21,6 +21,7 @@
 *.pem
 .env*
 !.env.example
+/.data/
 
 # logs
 npm-debug.log*

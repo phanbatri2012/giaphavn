@@ -2,12 +2,13 @@ import "server-only";
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { demoTenant, demoTree } from "@/lib/demo/data";
+import { demoTenant } from "@/lib/demo/data";
 import type { FamilyTree } from "@/lib/domain/types";
 import { PLANS } from "@/lib/domain/plans";
 import { hasSupabaseConfig } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getEditableTree } from "@/lib/repository/trees";
+import { getDemoTree } from "@/lib/demo/store";
 
 export const TENANT_CONTEXT_COOKIE = "giaphavn_tenant";
 export const TREE_CONTEXT_COOKIE = "giaphavn_tree";
@@ -34,21 +35,21 @@ function initials(value: string) {
   return value.split(/\s+/).filter(Boolean).slice(-2).map((part) => part.charAt(0).toUpperCase()).join("") || "GP";
 }
 
-function demoContext(): DashboardContext {
+function demoContext(tree: FamilyTree): DashboardContext {
   const plan = PLANS.find((item) => item.id === "community") ?? PLANS[0];
   return {
     tenants: [{ id: demoTenant.id, name: demoTenant.name, shortName: demoTenant.shortName, slug: demoTenant.slug }],
     currentTenant: { id: demoTenant.id, name: demoTenant.name, shortName: demoTenant.shortName, slug: demoTenant.slug },
-    trees: [{ id: demoTree.id, name: demoTree.name }],
-    currentTreeId: demoTree.id,
-    subscription: { planName: plan.name, planId: plan.id, status: "active", expiresAt: "2027-06-01T00:00:00.000Z", daysRemaining: 202, memberLimit: plan.personLimit, personCount: demoTree.persons.length },
+    trees: [{ id: tree.id, name: tree.name }],
+    currentTreeId: tree.id,
+    subscription: { planName: plan.name, planId: plan.id, status: "active", expiresAt: "2027-06-01T00:00:00.000Z", daysRemaining: 202, memberLimit: plan.personLimit, personCount: tree.persons.length },
     user: { name: "Trần Anh Trí", initials: "TA" },
     isPlatformAdmin: true
   };
 }
 
 export async function getDashboardContext(): Promise<DashboardContext> {
-  if (!hasSupabaseConfig()) return demoContext();
+  if (!hasSupabaseConfig()) return demoContext(await getDemoTree());
   const supabase = await createSupabaseServerClient();
   const [{ data: auth }, { data: memberships }] = await Promise.all([
     supabase.auth.getUser(),
@@ -109,7 +110,7 @@ export async function getCurrentTenantId() {
 }
 
 export async function getCurrentTree(): Promise<FamilyTree> {
-  if (!hasSupabaseConfig()) return structuredClone(demoTree);
+  if (!hasSupabaseConfig()) return getDemoTree();
   const context = await getDashboardContext();
   const tree = await getEditableTree(context.currentTreeId);
   if (!tree) redirect("/tao-dong-ho");

@@ -6,12 +6,14 @@ import type { Person } from "@/lib/domain/types";
 import { hasSupabaseConfig } from "@/lib/supabase/config";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { verifyTreeAccessCookie } from "@/lib/security/access-code";
+import { getDemoTree } from "@/lib/demo/store";
 
 export async function GET(_: Request, context: { params: Promise<{ treeId: string }> }) {
   const { treeId } = await context.params;
   if (!hasSupabaseConfig()) {
     if (treeId !== demoTree.id) return NextResponse.json({ error: "Không tìm thấy phả đồ." }, { status: 404 });
-    return NextResponse.json({ id: demoTree.id, name: demoTree.name, graphVersion: demoTree.graphVersion, persons: demoTree.persons.map(toPublicPerson), unions: demoTree.unions, parentageLinks: demoTree.parentageLinks });
+    const tree = await getDemoTree();
+    return NextResponse.json({ id: tree.id, name: tree.name, graphVersion: tree.graphVersion, persons: tree.persons.map(toPublicPerson), unions: tree.unions, parentageLinks: tree.parentageLinks }, { headers: { "Cache-Control": "no-store" } });
   }
   const admin = createSupabaseAdminClient();
   if (!admin) return NextResponse.json({ error: "Dịch vụ chưa được cấu hình." }, { status: 503 });

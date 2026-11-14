@@ -2,6 +2,7 @@ import { demoTree } from "@/lib/demo/data";
 import type { FamilyTree, Person } from "@/lib/domain/types";
 import { hasSupabaseConfig } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getDemoArchivedPeople, getDemoTree } from "@/lib/demo/store";
 
 function partialDateValue(value: string, precision: "year" | "month" | "day") {
   return precision === "year" ? value.slice(0, 4) : precision === "month" ? value.slice(0, 7) : value.slice(0, 10);
@@ -30,7 +31,7 @@ function mapPerson(row: DbPersonRow): Person {
 }
 
 export async function getArchivedPeople(treeId: string): Promise<Person[]> {
-  if (!hasSupabaseConfig()) return [];
+  if (!hasSupabaseConfig()) return getDemoArchivedPeople(treeId);
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase.from("persons").select("*").eq("tree_id", treeId).not("archived_at", "is", null).gt("purge_after", new Date().toISOString()).order("archived_at", { ascending: false });
   if (error) return [];
@@ -38,7 +39,7 @@ export async function getArchivedPeople(treeId: string): Promise<Person[]> {
 }
 
 export async function getEditableTree(treeId: string): Promise<FamilyTree | null> {
-  if (!hasSupabaseConfig()) return treeId === demoTree.id ? structuredClone(demoTree) : null;
+  if (!hasSupabaseConfig()) return treeId === demoTree.id ? getDemoTree() : null;
   const supabase = await createSupabaseServerClient();
   const { data: tree, error } = await supabase.from("family_trees").select("id, tenant_id, name, root_person_id, visibility, graph_version").eq("id", treeId).is("archived_at", null).maybeSingle();
   if (error || !tree) return null;

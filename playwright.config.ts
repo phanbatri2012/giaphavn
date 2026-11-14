@@ -15,7 +15,11 @@ export default defineConfig({
   webServer: {
     command: "npm run dev",
     url: "http://localhost:3000",
-    reuseExistingServer: !process.env.CI
+    reuseExistingServer: false,
+    env: {
+      LOCAL_DEMO_PERSISTENCE: "true",
+      LOCAL_DEMO_DATA_FILE: "e2e-demo-state.json"
+    }
   },
   projects: [
     { name: "chromium", use: { ...devices["Desktop Chrome"] } },

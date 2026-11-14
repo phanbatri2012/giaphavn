@@ -80,3 +80,32 @@ test("bundled fonts load Vietnamese glyphs", async ({ page }) => {
   expect(fontState.sansLoaded).toBe(true);
   expect(fontState.headingFamily).toContain("Noto Serif Variable");
 });
+
+test("local demo genealogy edits survive a page reload", async ({ page, request }) => {
+  const reset = await request.post("/api/demo/reset");
+  expect(reset.ok()).toBe(true);
+
+  try {
+    await page.goto("/app/pha-do");
+    await page.getByRole("button", { name: "Thêm người" }).click();
+    await page.getByLabel("Họ và tên").fill("Nguyễn Thị Kiểm Thử E2E");
+    await page.getByLabel("Giới tính").selectOption("female");
+    await page.getByRole("button", { name: "Thêm vào phả đồ" }).click();
+    await expect(page.getByRole("heading", { name: "Nguyễn Thị Kiểm Thử E2E" })).toBeVisible();
+
+    await page.getByRole("button", { name: /Sửa hồ sơ/ }).click();
+    const editor = page.locator(".person-editor-dialog");
+    await editor.getByLabel("Họ và tên").fill("Nguyễn Thị Minh Anh E2E");
+    await editor.getByLabel("Vai vế").fill("Hậu duệ kiểm thử");
+    await editor.getByRole("button", { name: "Lưu hồ sơ" }).click();
+    await expect(page.getByRole("heading", { name: "Nguyễn Thị Minh Anh E2E" })).toBeVisible();
+
+    await page.reload();
+    await expect(page.getByText("Nguyễn Thị Minh Anh E2E", { exact: true }).first()).toBeVisible();
+    const graph = await request.get("/api/public/trees/tree-demo-main/graph");
+    const payload = await graph.json() as { persons: Array<{ fullName: string }> };
+    expect(payload.persons.some((person) => person.fullName === "Nguyễn Thị Minh Anh E2E")).toBe(true);
+  } finally {
+    await request.post("/api/demo/reset");
+  }
+});
