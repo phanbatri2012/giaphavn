@@ -7,7 +7,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { ImportExcelDialog } from "@/components/import-excel-dialog";
 
-export function MemberTable({ people, archivedPeople, treeId, graphVersion: initialVersion, memberLimit }: { people: Person[]; archivedPeople: Person[]; treeId: string; graphVersion: number; memberLimit: number }) {
+export function MemberTable({ people, archivedPeople, treeId, graphVersion: initialVersion }: { people: Person[]; archivedPeople: Person[]; treeId: string; graphVersion: number }) {
   const [query, setQuery] = useState("");
   const [importing, setImporting] = useState(false);
   const [activePeople, setActivePeople] = useState(people);
@@ -45,10 +45,10 @@ export function MemberTable({ people, archivedPeople, treeId, graphVersion: init
           <td>Đời {person.generation}</td><td>{person.birthDate?.value ?? "—"}</td>
           <td><span className={person.isDeceased ? "status-chip neutral" : "status-chip active"}>{person.isDeceased ? "Đã mất" : "Còn sống"}</span></td>
           <td>{person.roleTitle ?? "Thành viên"}</td>
-          <td><Link className="icon-button" href={`/app/pha-do?person=${person.id}`} aria-label={`Sửa ${person.fullName}`}><Pencil /></Link></td>
+          <td><Link className="icon-button" href={`/admin/pha-do?person=${person.id}`} aria-label={`Sửa ${person.fullName}`}><Pencil /></Link></td>
         </tr>)}</tbody>
       </table></div>
-      <div className="table-footer"><span>Hiển thị {filtered.length} / {activePeople.length} thành viên</span><span>Hạn mức gói: {memberLimit}</span></div>
+      <div className="table-footer"><span>Hiển thị {filtered.length} / {activePeople.length} thành viên</span><span>Bản cá nhân · không giới hạn theo gói</span></div>
       {importing && <ImportExcelDialog treeId={treeId} onClose={() => setImporting(false)} />}
     </section>
     {trash.length > 0 && <section className="dashboard-panel member-trash">

@@ -7,12 +7,19 @@ import { hasSupabaseConfig } from "@/lib/supabase/config";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { verifyTreeAccessCookie } from "@/lib/security/access-code";
 import { getDemoTree } from "@/lib/demo/store";
+import { isPersonalEdition } from "@/lib/personal/mode";
 
 export async function GET(_: Request, context: { params: Promise<{ treeId: string }> }) {
   const { treeId } = await context.params;
-  if (!hasSupabaseConfig()) {
+  if (isPersonalEdition() || !hasSupabaseConfig()) {
     if (treeId !== demoTree.id) return NextResponse.json({ error: "Không tìm thấy phả đồ." }, { status: 404 });
     const tree = await getDemoTree();
+    if (tree.visibility === "protected") {
+      const store = await cookies();
+      if (!verifyTreeAccessCookie(treeId, store.get(`tree_access_${treeId}`)?.value)) {
+        return NextResponse.json({ error: "Phả đồ yêu cầu mã bảo mật.", code: "TREE_LOCKED" }, { status: 401 });
+      }
+    }
     return NextResponse.json({ id: tree.id, name: tree.name, graphVersion: tree.graphVersion, persons: tree.persons.map(toPublicPerson), unions: tree.unions, parentageLinks: tree.parentageLinks }, { headers: { "Cache-Control": "no-store" } });
   }
   const admin = createSupabaseAdminClient();

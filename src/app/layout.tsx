@@ -14,10 +14,10 @@ export const metadata: Metadata = {
     template: "%s | GiaPhaVN"
   },
   description:
-    "Nền tảng gia phả trực tuyến giúp mỗi dòng họ xây phả đồ, lưu ký ức và kết nối các thế hệ.",
+    "Không gian gia phả riêng để gìn giữ phả đồ, ký ức và câu chuyện của một dòng họ.",
   openGraph: {
     title: "GiaPhaVN — Gìn giữ nguồn cội",
-    description: "Dựng phả đồ, lưu ký ức và tạo website riêng cho dòng họ.",
+    description: "Phả đồ và ký ức số của dòng họ.",
     type: "website",
     locale: "vi_VN"
   }

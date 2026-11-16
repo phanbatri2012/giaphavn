@@ -4,6 +4,8 @@ import { clientAddress, rateLimit } from "@/lib/security/rate-limit";
 import { verifyTurnstile } from "@/lib/security/turnstile";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { hasTrustedOrigin } from "@/lib/security/same-origin";
+import { isPersonalEdition } from "@/lib/personal/mode";
+import { addPersonalContact } from "@/lib/personal/site-store";
 
 const contactSchema = z.object({
   tenantId: z.string().min(3).max(100),
@@ -25,6 +27,14 @@ export async function POST(request: Request) {
   const parsed = contactSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Dữ liệu lời nhắn chưa hợp lệ." }, { status: 400 });
   if (parsed.data.website) return NextResponse.json({ accepted: true }, { status: 202 });
+  if (isPersonalEdition() && ["localhost", "127.0.0.1", "::1"].includes(new URL(request.url).hostname)) {
+    try {
+      await addPersonalContact(parsed.data.tenantId, parsed.data);
+      return NextResponse.json({ accepted: true }, { status: 201 });
+    } catch {
+      return NextResponse.json({ error: "Website gia phả không nhận lời nhắn này." }, { status: 404 });
+    }
+  }
   if (!(await verifyTurnstile(parsed.data.turnstileToken, ip))) {
     return NextResponse.json({ error: "Không thể xác minh yêu cầu." }, { status: 403 });
   }

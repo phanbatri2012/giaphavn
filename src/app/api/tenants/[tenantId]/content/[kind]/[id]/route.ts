@@ -4,6 +4,8 @@ import { hasTrustedOrigin } from "@/lib/security/same-origin";
 import { sanitizeContentHtml } from "@/lib/security/sanitize-content";
 import { hasSupabaseConfig } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { isPersonalEdition } from "@/lib/personal/mode";
+import { updatePersonalContent } from "@/lib/personal/site-store";
 
 const kindSchema = z.enum(["post", "event", "album"]);
 const statusSchema = z.enum(["draft", "published", "archived"]);
@@ -18,14 +20,30 @@ async function mutate(request: Request, context: Context, forcedStatus?: "archiv
   if (!hasTrustedOrigin(request)) return NextResponse.json({ error: "Nguồn yêu cầu không hợp lệ." }, { status: 403 });
   const { tenantId, kind, id } = await context.params;
   const parsedKind = kindSchema.safeParse(kind);
-  if (!parsedKind.success || !z.string().uuid().safeParse(id).success) return NextResponse.json({ error: "Yêu cầu không hợp lệ." }, { status: 400 });
+  if (!parsedKind.success || !id || id.length > 100) return NextResponse.json({ error: "Yêu cầu không hợp lệ." }, { status: 400 });
   const body = forcedStatus ? { status: forcedStatus } : await request.json().catch(() => null);
   const fullUpdate = !forcedStatus && body && typeof body === "object" && "title" in body;
   const parsedBody = fullUpdate
     ? parsedKind.data === "post" ? postUpdate.safeParse(body) : parsedKind.data === "event" ? eventUpdate.safeParse(body) : albumUpdate.safeParse(body)
     : statusUpdate.safeParse(body);
   if (!parsedBody.success) return NextResponse.json({ error: "Nội dung cập nhật không hợp lệ.", details: parsedBody.error.flatten() }, { status: 400 });
-  if (!hasSupabaseConfig()) return NextResponse.json({ updated: true, demo: true });
+  if (isPersonalEdition() || !hasSupabaseConfig()) {
+    const value = parsedBody.data as Record<string, unknown>;
+    const values = parsedKind.data === "post" && "bodyHtml" in value
+      ? {
+          ...value,
+          bodyHtml: sanitizeContentHtml(String(value.bodyHtml ?? "")),
+          bodyText: String(value.bodyHtml ?? "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim()
+        }
+      : value;
+    try {
+      await updatePersonalContent(tenantId, parsedKind.data, id, values);
+      return NextResponse.json({ updated: true });
+    } catch {
+      return NextResponse.json({ error: "Không tìm thấy hoặc không thể cập nhật nội dung local." }, { status: 404 });
+    }
+  }
+  if (!z.string().uuid().safeParse(id).success) return NextResponse.json({ error: "Yêu cầu không hợp lệ." }, { status: 400 });
 
   const supabase = await createSupabaseServerClient();
   let error: { message: string } | null = null;

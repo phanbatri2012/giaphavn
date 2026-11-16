@@ -8,5 +8,5 @@ export const metadata: Metadata = { title: "Cài đặt" };
 
 export default async function SettingsPage() {
   const tenantId = await getCurrentTenantId();
-  return <AccountSettings tenantId={tenantId} settings={await getAccountSettings(tenantId)} localDemo={isLocalDemoPersistenceEnabled()} />;
+  return <AccountSettings settings={await getAccountSettings(tenantId)} localDemo={isLocalDemoPersistenceEnabled()} />;
 }

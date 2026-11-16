@@ -6,6 +6,8 @@ import { clientAddress, rateLimit } from "@/lib/security/rate-limit";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { verifyTurnstile } from "@/lib/security/turnstile";
 import { hasTrustedOrigin } from "@/lib/security/same-origin";
+import { isPersonalEdition } from "@/lib/personal/mode";
+import { getPersonalTreeAccessHash } from "@/lib/personal/site-store";
 
 const bodySchema = z.object({ code: z.string().min(4).max(100), turnstileToken: z.string().optional() });
 
@@ -22,8 +24,8 @@ export async function POST(request: Request, context: { params: Promise<{ treeId
     return NextResponse.json({ error: "Vui lòng hoàn thành bước xác minh trước khi thử lại.", captchaRequired: true }, { status: 403 });
   }
 
-  let hashValue = process.env.TREE_ACCESS_HASH;
-  const admin = createSupabaseAdminClient();
+  let hashValue = isPersonalEdition() ? await getPersonalTreeAccessHash() : process.env.TREE_ACCESS_HASH;
+  const admin = isPersonalEdition() ? null : createSupabaseAdminClient();
   if (admin) {
     const { data } = await admin
       .from("family_trees")

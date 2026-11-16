@@ -2,9 +2,14 @@ import "server-only";
 
 import { hasSupabaseConfig } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { isPersonalEdition } from "@/lib/personal/mode";
+import { getPersonalSiteState } from "@/lib/personal/site-store";
 
 export async function getAccountSettings(tenantId: string) {
-  if (!hasSupabaseConfig()) return { profile: { fullName: "Trần Anh Trí", email: "tri@example.vn" }, admins: [{ userId: "demo-owner", fullName: "Trần Anh Trí", role: "owner" as const }], invitations: [] as Array<{ id: string; email: string; expiresAt: string }>, mfaEnabled: false, deletionRequestedAt: undefined as string | undefined, purgeAfter: undefined as string | undefined };
+  if (isPersonalEdition() || !hasSupabaseConfig()) {
+    const { profile } = await getPersonalSiteState();
+    return { profile, admins: [{ userId: "personal-owner", fullName: profile.fullName, role: "owner" as const }], invitations: [] as Array<{ id: string; email: string; expiresAt: string }>, mfaEnabled: false, deletionRequestedAt: undefined as string | undefined, purgeAfter: undefined as string | undefined };
+  }
   const supabase = await createSupabaseServerClient();
   const { data: auth } = await supabase.auth.getUser();
   if (!auth.user) throw new Error("AUTH_REQUIRED");

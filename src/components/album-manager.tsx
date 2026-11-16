@@ -5,7 +5,6 @@ import Image from "next/image";
 import { Eye, EyeOff, ImagePlus, Images, Pencil, Plus, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import type { AdminAlbum } from "@/lib/repository/content";
-import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 export function AlbumManager({ tenantId, albums }: { tenantId: string; albums: AdminAlbum[] }) {
   const router = useRouter();
@@ -31,8 +30,8 @@ export function AlbumManager({ tenantId, albums }: { tenantId: string; albums: A
   }
 
   async function removeImage(id: string) {
-    if (!window.confirm("Xóa ảnh này khỏi album và Storage?")) return;
-    setSaving(true); const response = await fetch(`/api/media/${id}`, { method: "DELETE" }); setSaving(false);
+    if (!window.confirm("Xóa ảnh này khỏi album và ổ đĩa local?")) return;
+    setSaving(true); const response = await fetch(`/api/personal/media/${id}`, { method: "DELETE" }); setSaving(false);
     if (response.ok) router.refresh(); else setMessage("Không thể xóa ảnh.");
   }
 
@@ -40,18 +39,15 @@ export function AlbumManager({ tenantId, albums }: { tenantId: string; albums: A
     if (!files?.length) return;
     setSaving(true); setMessage("");
     for (const file of Array.from(files)) {
-      const ticketResponse = await fetch("/api/media/upload-ticket", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ tenantId, filename: file.name, mimeType: file.type, size: file.size }) });
-      const ticket = await ticketResponse.json() as { path?: string; token?: string; demo?: boolean; error?: string };
-      if (!ticketResponse.ok || !ticket.path) { setMessage(ticket.error ?? `Không thể tải ${file.name}.`); break; }
-      if (!ticket.demo) {
-        const supabase = createSupabaseBrowserClient();
-        if (!supabase || !ticket.token) { setMessage("Storage chưa được cấu hình."); break; }
-        const { error } = await supabase.storage.from("tenant-media").uploadToSignedUrl(ticket.path, ticket.token, file, { contentType: file.type });
-        if (error) { setMessage(`Không thể tải ${file.name}.`); break; }
-      }
-      const finalize = await fetch("/api/media/finalize", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ tenantId, path: ticket.path, mimeType: file.type, size: file.size, albumId: album.id, isPublic: album.status === "published" }) });
-      const result = await finalize.json() as { error?: string };
-      if (!finalize.ok) { setMessage(result.error ?? `Không thể hoàn tất ${file.name}.`); break; }
+      const form = new FormData();
+      form.set("file", file);
+      form.set("tenantId", tenantId);
+      form.set("albumId", album.id);
+      form.set("alt", album.title);
+      form.set("isPublic", String(album.status === "published"));
+      const uploadResponse = await fetch("/api/personal/media", { method: "POST", body: form });
+      const result = await uploadResponse.json() as { error?: string };
+      if (!uploadResponse.ok) { setMessage(result.error ?? `Không thể tải ${file.name}.`); break; }
     }
     setSaving(false); router.refresh();
   }

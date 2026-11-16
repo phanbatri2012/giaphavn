@@ -12,6 +12,6 @@ export function demoStoreErrorResponse(error: unknown) {
       { status: error.status }
     );
   }
-  console.error("Local demo store failed", error);
-  return NextResponse.json({ error: "Không thể cập nhật dữ liệu demo local." }, { status: 500 });
+  console.error("Personal data store failed", error);
+  return NextResponse.json({ error: "Không thể cập nhật dữ liệu gia phả local." }, { status: 500 });
 }

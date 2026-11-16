@@ -1,5 +1,4 @@
-import { demoSnapshot } from "@/lib/demo/data";
-import type { TenantSnapshot } from "@/lib/domain/types";
+import type { FamilyTree, TenantSnapshot } from "@/lib/domain/types";
 import { hasSupabaseConfig } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -8,6 +7,9 @@ import { cookies } from "next/headers";
 import { sanitizeContentHtml } from "@/lib/security/sanitize-content";
 import type { Person, PersonPublicFields } from "@/lib/domain/types";
 import { getDemoTree } from "@/lib/demo/store";
+import { isPersonalEdition } from "@/lib/personal/mode";
+import { getPersonalSiteState } from "@/lib/personal/site-store";
+import { toPublicPerson } from "@/lib/domain/genealogy";
 
 type DbTenant = {
   id: string;
@@ -96,12 +98,89 @@ function mapPublicSnapshotPerson(row: Record<string, unknown>, alreadyProjected:
   };
 }
 
+function projectPersonalTree(tree: FamilyTree, accessGranted: boolean): FamilyTree {
+  if (!accessGranted) return { ...tree, persons: [], unions: [], parentageLinks: [] };
+  const persons = tree.persons.filter((person) => !person.archivedAt).map((person) => ({
+    tenantId: person.tenantId,
+    treeId: person.treeId,
+    searchName: person.searchName,
+    otherName: person.otherName,
+    publicFields: person.publicFields,
+    ...toPublicPerson(person)
+  } satisfies Person));
+  const activeIds = new Set(persons.map((person) => person.id));
+  const unions = tree.unions.filter((union) => union.partnerIds.every((id) => activeIds.has(id)));
+  const unionIds = new Set(unions.map((union) => union.id));
+  const parentageLinks = tree.parentageLinks.filter((link) =>
+    activeIds.has(link.parentId) && activeIds.has(link.childId) && (!link.unionId || unionIds.has(link.unionId))
+  );
+  return { ...tree, persons, unions, parentageLinks };
+}
+
 export async function getTenantSnapshot(slug: string): Promise<TenantSnapshot | null> {
-  if (!hasSupabaseConfig()) {
-    if (slug !== demoSnapshot.tenant.slug) return null;
-    const snapshot = structuredClone(demoSnapshot);
-    snapshot.tree = await getDemoTree();
-    return snapshot;
+  if (isPersonalEdition() || !hasSupabaseConfig()) {
+    const [site, tree] = await Promise.all([getPersonalSiteState(), getDemoTree()]);
+    if (slug !== site.branding.slug || !site.branding.published) return null;
+    const cookieStore = await cookies();
+    const treeAccessGranted = tree.visibility === "public" || verifyTreeAccessCookie(tree.id, cookieStore.get(`tree_access_${tree.id}`)?.value);
+    return {
+      tenant: {
+        id: site.branding.id,
+        slug: site.branding.slug,
+        name: site.branding.name,
+        shortName: site.branding.shortName,
+        introduction: site.branding.introduction,
+        chronicle: site.branding.chronicle,
+        address: site.branding.address,
+        contactEmail: site.branding.contactEmail,
+        contactPhone: site.branding.contactPhone,
+        mapUrl: site.branding.mapUrl || undefined,
+        seo: { title: site.branding.seoTitle, description: site.branding.seoDescription },
+        published: site.branding.published,
+        theme: {
+          primaryColor: site.branding.primaryColor,
+          accentColor: site.branding.accentColor,
+          logoUrl: site.branding.logoUrl || undefined,
+          bannerUrl: site.branding.bannerUrl || undefined
+        }
+      },
+      tree: projectPersonalTree(tree, treeAccessGranted),
+      subscription: { planId: "free", status: "free" },
+      posts: site.posts.filter((post) => post.status === "published").map((post) => ({
+        id: post.id,
+        tenantId: site.branding.id,
+        slug: post.slug,
+        title: post.title,
+        excerpt: post.excerpt,
+        bodyText: post.bodyText,
+        bodyHtml: post.bodyHtml,
+        category: post.category,
+        status: "published" as const,
+        publishedAt: post.publishedAt
+      })),
+      events: site.events.filter((event) => event.status === "published").map((event) => ({
+        id: event.id,
+        tenantId: site.branding.id,
+        title: event.title,
+        description: event.description,
+        startsAt: event.startsAt,
+        lunarLabel: event.lunarLabel,
+        location: event.location,
+        status: "published" as const
+      })),
+      albums: site.albums.filter((album) => album.status === "published").map((album) => ({
+        id: album.id,
+        tenantId: site.branding.id,
+        title: album.title,
+        description: album.description,
+        coverUrl: album.coverUrl,
+        youtubeUrl: album.youtubeUrl,
+        images: album.images,
+        imageCount: album.images.length || album.imageCount,
+        status: "published" as const
+      })),
+      treeAccessGranted
+    };
   }
 
   const supabase = await createSupabaseServerClient();

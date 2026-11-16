@@ -1,9 +1,12 @@
 import "server-only";
 
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { z } from "zod";
 import { demoTree } from "@/lib/demo/data";
 import { normalizeVietnameseName, validateTree } from "@/lib/domain/genealogy";
+import { readPersonalState, writePersonalState } from "@/lib/personal/database";
+import { getPersonalSiteState, restorePersonalSiteState } from "@/lib/personal/site-store";
 import type {
   FamilyTree,
   FamilyUnion,
@@ -20,6 +23,85 @@ type DemoState = {
   schemaVersion: 1;
   tree: FamilyTree;
 };
+
+const genealogyDateSchema = z.object({
+  value: z.string().min(1).max(10),
+  precision: z.enum(["year", "month", "day"]),
+  calendar: z.enum(["solar", "lunar"])
+}).strict();
+
+const publicFieldsSchema = z.object({
+  avatar: z.boolean(),
+  exactBirthDate: z.boolean(),
+  phone: z.boolean(),
+  email: z.boolean(),
+  address: z.boolean(),
+  biography: z.boolean()
+}).strict();
+
+const personSchema = z.object({
+  id: z.string().min(1).max(100),
+  tenantId: z.string().min(1).max(100),
+  treeId: z.string().min(1).max(100),
+  fullName: z.string().trim().min(1).max(160),
+  searchName: z.string().max(200),
+  otherName: z.string().max(160).optional(),
+  gender: z.enum(["male", "female", "other"]),
+  generation: z.number().int().min(1).max(99),
+  roleTitle: z.string().max(160).optional(),
+  avatarUrl: z.string().max(2_000).optional(),
+  birthDate: genealogyDateSchema.optional(),
+  deathDate: genealogyDateSchema.optional(),
+  isDeceased: z.boolean(),
+  phone: z.string().max(50).optional(),
+  email: z.string().max(254).optional(),
+  address: z.string().max(500).optional(),
+  education: z.string().max(500).optional(),
+  religion: z.string().max(160).optional(),
+  biography: z.string().max(50_000).optional(),
+  publicFields: publicFieldsSchema,
+  sortOrder: z.number().int().min(0),
+  archivedAt: z.string().datetime().optional()
+}).strict();
+
+const unionSchema = z.object({
+  id: z.string().min(1).max(100),
+  tenantId: z.string().min(1).max(100),
+  treeId: z.string().min(1).max(100),
+  partnerIds: z.array(z.string().min(1).max(100)).min(1).max(2),
+  sortOrder: z.number().int().min(0)
+}).strict();
+
+const parentageSchema = z.object({
+  id: z.string().min(1).max(100),
+  tenantId: z.string().min(1).max(100),
+  treeId: z.string().min(1).max(100),
+  parentId: z.string().min(1).max(100),
+  childId: z.string().min(1).max(100),
+  unionId: z.string().min(1).max(100).optional(),
+  relationshipType: z.enum(["biological", "adoptive", "step", "guardian"]),
+  sortOrder: z.number().int().min(0)
+}).strict();
+
+const personalBackupSchema = z.object({
+  format: z.literal("giaphavn-personal-backup"),
+  version: z.literal(1),
+  exportedAt: z.string().datetime(),
+  tree: z.object({
+    id: z.string().min(1).max(100),
+    tenantId: z.string().min(1).max(100),
+    name: z.string().trim().min(1).max(200),
+    rootPersonId: z.string().min(1).max(100),
+    visibility: z.enum(["public", "protected"]),
+    graphVersion: z.number().int().min(1),
+    persons: z.array(personSchema).min(1).max(2_000),
+    unions: z.array(unionSchema).max(4_000),
+    parentageLinks: z.array(parentageSchema).max(8_000)
+  }).strict(),
+  site: z.unknown().optional()
+}).strict();
+
+export type PersonalBackup = z.infer<typeof personalBackupSchema>;
 
 type DemoStoreGlobals = typeof globalThis & {
   __giaphavnDemoQueue?: Promise<void>;
@@ -87,6 +169,8 @@ function dataFilePath() {
   return path.join(process.cwd(), ".data", filename);
 }
 
+const PERSONAL_TREE_KEY = "family-tree";
+
 function cloneSeedTree() {
   return structuredClone(demoTree);
 }
@@ -121,25 +205,28 @@ function looksLikeState(value: unknown): value is DemoState {
 }
 
 async function writeState(tree: FamilyTree) {
-  const filename = dataFilePath();
-  await mkdir(path.dirname(filename), { recursive: true });
-  const temporary = `${filename}.${process.pid}.${crypto.randomUUID()}.tmp`;
-  await writeFile(temporary, `${JSON.stringify({ schemaVersion: 1, tree } satisfies DemoState, null, 2)}\n`, "utf8");
-  await rename(temporary, filename);
+  writePersonalState(PERSONAL_TREE_KEY, JSON.stringify({ schemaVersion: 1, tree } satisfies DemoState));
 }
 
 async function readState() {
-  const filename = dataFilePath();
-  try {
-    const parsed: unknown = JSON.parse(await readFile(filename, "utf8"));
-    if (!looksLikeState(parsed)) throw new Error("Định dạng kho dữ liệu demo không hợp lệ.");
+  const stored = readPersonalState(PERSONAL_TREE_KEY);
+  if (stored) {
+    const parsed: unknown = JSON.parse(stored);
+    if (!looksLikeState(parsed)) throw new Error("Định dạng dữ liệu phả đồ trong SQLite không hợp lệ.");
     return structuredClone(parsed.tree);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    const tree = cloneSeedTree();
-    await writeState(tree);
-    return tree;
   }
+
+  const legacyFilename = dataFilePath();
+  if (existsSync(legacyFilename)) {
+    const parsed: unknown = JSON.parse(readFileSync(legacyFilename, "utf8"));
+    if (!looksLikeState(parsed)) throw new Error("Định dạng kho dữ liệu JSON cũ không hợp lệ.");
+    await writeState(parsed.tree);
+    return structuredClone(parsed.tree);
+  }
+
+  const tree = cloneSeedTree();
+  await writeState(tree);
+  return tree;
 }
 
 function runExclusive<T>(task: () => Promise<T>): Promise<T> {
@@ -188,6 +275,32 @@ function validateMutation(tree: FamilyTree) {
   throw new DemoStoreError("INVALID_TREE", errors[0], 409);
 }
 
+function validateRestoredTree(tree: FamilyTree) {
+  if (tree.id !== demoTree.id || tree.tenantId !== demoTree.tenantId) {
+    throw new DemoStoreError("INVALID_TREE", "Bản sao lưu không thuộc gia phả cá nhân này.", 400);
+  }
+
+  const unique = (values: string[]) => new Set(values).size === values.length;
+  if (!unique(tree.persons.map((person) => person.id)) ||
+      !unique(tree.unions.map((union) => union.id)) ||
+      !unique(tree.parentageLinks.map((link) => link.id))) {
+    throw new DemoStoreError("INVALID_TREE", "Bản sao lưu có mã định danh bị trùng.", 400);
+  }
+
+  const unionIds = new Set(tree.unions.map((union) => union.id));
+  const wrongScope = [
+    ...tree.persons.map((person) => person.tenantId !== tree.tenantId || person.treeId !== tree.id),
+    ...tree.unions.map((union) => union.tenantId !== tree.tenantId || union.treeId !== tree.id),
+    ...tree.parentageLinks.map((link) => link.tenantId !== tree.tenantId || link.treeId !== tree.id)
+  ].some(Boolean);
+  if (wrongScope || tree.parentageLinks.some((link) => link.unionId && !unionIds.has(link.unionId))) {
+    throw new DemoStoreError("INVALID_TREE", "Bản sao lưu chứa quan hệ không cùng phả đồ.", 400);
+  }
+
+  const errors = validateTree(projectActiveTree(tree));
+  if (errors.length) throw new DemoStoreError("INVALID_TREE", errors[0], 400);
+}
+
 async function mutateTree<T>(
   treeId: string,
   expectedVersion: number,
@@ -231,10 +344,41 @@ export async function resetDemoData() {
   });
 }
 
+export async function createPersonalBackup(): Promise<PersonalBackup> {
+  const [tree, site] = await Promise.all([
+    getDemoTree({ includeArchived: true }),
+    getPersonalSiteState()
+  ]);
+  return {
+    format: "giaphavn-personal-backup",
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    tree,
+    site
+  };
+}
+
+export async function restorePersonalBackup(input: unknown) {
+  if (!isLocalDemoPersistenceEnabled()) {
+    throw new DemoStoreError("DEMO_READ_ONLY", "Chế độ lưu dữ liệu local chưa được bật.", 503);
+  }
+  const parsed = personalBackupSchema.safeParse(input);
+  if (!parsed.success) {
+    throw new DemoStoreError("INVALID_TREE", "File sao lưu không đúng định dạng GiaPhaVN.", 400);
+  }
+  return runExclusive(async () => {
+    const tree = structuredClone(parsed.data.tree) as FamilyTree;
+    validateRestoredTree(tree);
+    if (parsed.data.site) await restorePersonalSiteState(parsed.data.site);
+    await writeState(tree);
+    return projectActiveTree(tree);
+  });
+}
+
 export async function addDemoPerson(treeId: string, input: AddPersonInput) {
   return mutateTree(treeId, input.expectedVersion, (tree) => {
-    if (tree.persons.filter((person) => !person.archivedAt).length >= 500) {
-      throw new DemoStoreError("MEMBER_LIMIT", "Phả đồ demo đã đạt giới hạn 500 thành viên.", 409);
+    if (tree.persons.filter((person) => !person.archivedAt).length >= 2000) {
+      throw new DemoStoreError("MEMBER_LIMIT", "Phả đồ cá nhân đã đạt giới hạn kỹ thuật 2.000 thành viên.", 409);
     }
     const anchor = activePerson(tree, input.anchorId);
     let rebased = false;

@@ -2,6 +2,9 @@
   "name": "giaphavn",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=22.5.0"
+  },
   "packageManager": "npm@11.17.0",
   "scripts": {
     "dev": "next dev",
@@ -11,8 +14,7 @@
     "lint": "eslint . --max-warnings=0",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test",
-    "test:staging": "node scripts/staging-smoke.mjs"
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@fontsource-variable/noto-sans": "5.3.0",

@@ -1,9 +1,10 @@
 import "server-only";
 
-import { demoSnapshot } from "@/lib/demo/data";
 import { hasSupabaseConfig } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { sanitizeContentHtml } from "@/lib/security/sanitize-content";
+import { isPersonalEdition } from "@/lib/personal/mode";
+import { getPersonalSiteState } from "@/lib/personal/site-store";
 
 export type AdminPost = { id: string; title: string; slug: string; excerpt: string; bodyText: string; bodyHtml: string; category: string; status: "draft" | "published" | "archived"; publishedAt?: string };
 export type AdminEvent = { id: string; title: string; description: string; startsAt: string; endsAt?: string; lunarLabel?: string; location: string; status: "draft" | "published" | "archived" };
@@ -15,12 +16,16 @@ function htmlToText(value?: string | null) {
 }
 
 export async function getAdminContent(tenantId: string) {
-  if (!hasSupabaseConfig()) return {
-    posts: demoSnapshot.posts.map((post) => ({ id: post.id, title: post.title, slug: post.slug, excerpt: post.excerpt, bodyText: post.excerpt, bodyHtml: `<p>${post.excerpt}</p>`, category: post.category, status: post.status, publishedAt: post.publishedAt } satisfies AdminPost)),
-    events: demoSnapshot.events.map((event) => ({ id: event.id, title: event.title, description: event.description, startsAt: event.startsAt, lunarLabel: event.lunarLabel, location: event.location, status: event.status } satisfies AdminEvent)),
-    albums: demoSnapshot.albums.map((album) => ({ id: album.id, title: album.title, description: album.description, coverUrl: album.coverUrl, imageCount: album.imageCount, images: [], status: album.status } satisfies AdminAlbum)),
-    contacts: [] as AdminContact[]
-  };
+  if (isPersonalEdition() || !hasSupabaseConfig()) {
+    const state = await getPersonalSiteState();
+    if (state.branding.id !== tenantId) throw new Error("PERSONAL_TENANT_NOT_FOUND");
+    return {
+      posts: state.posts.filter((item) => item.status !== "archived"),
+      events: state.events.filter((item) => item.status !== "archived"),
+      albums: state.albums.filter((item) => item.status !== "archived"),
+      contacts: state.contacts
+    };
+  }
   const supabase = await createSupabaseServerClient();
   const [posts, events, albums, media, contacts] = await Promise.all([
     supabase.from("posts").select("id, title, slug, excerpt, body_html, category, status, published_at").eq("tenant_id", tenantId).neq("status", "archived").order("updated_at", { ascending: false }),

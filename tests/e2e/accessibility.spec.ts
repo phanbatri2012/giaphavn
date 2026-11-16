@@ -4,11 +4,10 @@ import { expect, test } from "@playwright/test";
 const wcagTags = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
 const paths = [
   "/",
-  "/site/demo-hong-viet",
-  "/site/demo-hong-viet/pha-do",
-  "/app/pha-do",
-  "/app/thanh-vien",
-  "/app/noi-dung"
+  "/pha-do",
+  "/admin/pha-do",
+  "/admin/thanh-vien",
+  "/admin/noi-dung"
 ];
 
 test("primary pages have no automatically detectable WCAG A/AA violations", async ({ page }, testInfo) => {

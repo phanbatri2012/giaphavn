@@ -5,6 +5,8 @@ import { hasTrustedOrigin } from "@/lib/security/same-origin";
 import { hasSupabaseConfig } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { plainTextToSafeHtml, sanitizeContentHtml } from "@/lib/security/sanitize-content";
+import { isPersonalEdition } from "@/lib/personal/mode";
+import { createPersonalContent } from "@/lib/personal/site-store";
 
 const status = z.enum(["draft", "published"]);
 const postSchema = z.object({ kind: z.literal("post"), title: z.string().trim().min(3).max(220), excerpt: z.string().trim().max(500).default(""), bodyText: z.string().trim().max(50000).default(""), bodyHtml: z.string().max(100000).default(""), category: z.string().trim().max(100).default("Tin dòng họ"), status });
@@ -21,7 +23,21 @@ export async function POST(request: Request, context: { params: Promise<{ tenant
   const { tenantId } = await context.params;
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Nội dung không hợp lệ.", details: parsed.error.flatten() }, { status: 400 });
-  if (!hasSupabaseConfig()) return NextResponse.json({ id: crypto.randomUUID(), demo: true }, { status: 201 });
+  if (isPersonalEdition() || !hasSupabaseConfig()) {
+    const data = parsed.data.kind === "post"
+      ? {
+          ...parsed.data,
+          bodyHtml: parsed.data.bodyHtml ? sanitizeContentHtml(parsed.data.bodyHtml) : plainTextToSafeHtml(parsed.data.bodyText),
+          bodyText: parsed.data.bodyText || parsed.data.bodyHtml.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim()
+        }
+      : parsed.data;
+    try {
+      const id = await createPersonalContent(tenantId, data);
+      return NextResponse.json({ id }, { status: 201 });
+    } catch {
+      return NextResponse.json({ error: "Không thể lưu nội dung local." }, { status: 400 });
+    }
+  }
   const supabase = await createSupabaseServerClient();
   const publishedAt = parsed.data.status === "published" ? new Date().toISOString() : null;
   let result;

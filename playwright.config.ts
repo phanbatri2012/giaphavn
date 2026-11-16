@@ -18,7 +18,9 @@ export default defineConfig({
     reuseExistingServer: false,
     env: {
       LOCAL_DEMO_PERSISTENCE: "true",
-      LOCAL_DEMO_DATA_FILE: "e2e-demo-state.json"
+      LOCAL_DEMO_DATA_FILE: "e2e-demo-state.json",
+      PERSONAL_DATABASE_FILE: "e2e-personal.sqlite",
+      TREE_ACCESS_COOKIE_SECRET: "e2e-personal-cookie-secret-at-least-32-characters"
     }
   },
   projects: [

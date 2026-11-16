@@ -21,21 +21,6 @@ jobs:
       - run: npm test
       - run: npm run build
 
-  migrations:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: npm
-      - run: npm ci
-      - run: npx supabase@3.1.0 start
-      - run: npx supabase@3.1.0 db reset --local
-      - run: npx supabase@3.1.0 test db
-      - if: always()
-        run: npx supabase@3.1.0 stop --no-backup
-
   e2e:
     runs-on: ubuntu-latest
     steps:

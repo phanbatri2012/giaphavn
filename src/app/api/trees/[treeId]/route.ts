@@ -6,6 +6,8 @@ import { hasSupabaseConfig } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { updateDemoTreeSettings } from "@/lib/demo/store";
 import { demoStoreErrorResponse } from "@/lib/demo/response";
+import { isPersonalEdition } from "@/lib/personal/mode";
+import { getPersonalTreeAccessHash, setPersonalTreeAccessHash } from "@/lib/personal/site-store";
 
 const updateSchema = z.object({
   expectedVersion: z.number().int().nonnegative(),
@@ -21,12 +23,16 @@ export async function PATCH(request: Request, context: { params: Promise<{ treeI
   const { treeId } = await context.params;
   const parsed = updateSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Thiết lập phả đồ không hợp lệ." }, { status: 400 });
-  if (!hasSupabaseConfig()) {
-    if (parsed.data.visibility === "protected" && !process.env.DEMO_TREE_ACCESS_CODE) {
-      return NextResponse.json({ error: "Hãy cấu hình DEMO_TREE_ACCESS_CODE trong .env.local trước khi bật mã bảo mật." }, { status: 400 });
+  if (isPersonalEdition() || !hasSupabaseConfig()) {
+    const currentHash = await getPersonalTreeAccessHash();
+    const nextHash = parsed.data.accessCode ? await hashTreeAccessCode(parsed.data.accessCode) : currentHash;
+    if (parsed.data.visibility === "protected" && !nextHash) {
+      return NextResponse.json({ error: "Hãy nhập mã bảo mật khi bật chế độ bảo vệ." }, { status: 400 });
     }
     try {
-      return NextResponse.json({ ...await updateDemoTreeSettings(treeId, parsed.data), demo: true });
+      const updated = await updateDemoTreeSettings(treeId, parsed.data);
+      if (nextHash && nextHash !== currentHash) await setPersonalTreeAccessHash(nextHash);
+      return NextResponse.json(updated);
     } catch (error) {
       return demoStoreErrorResponse(error);
     }
@@ -52,7 +58,7 @@ export async function DELETE(request: Request, context: { params: Promise<{ tree
   const { treeId } = await context.params;
   const parsed = archiveSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Yêu cầu không hợp lệ." }, { status: 400 });
-  if (!hasSupabaseConfig()) return NextResponse.json({ archived: true, demo: true });
+  if (isPersonalEdition() || !hasSupabaseConfig()) return NextResponse.json({ error: "Bản cá nhân luôn giữ phả đồ chính." }, { status: 405 });
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase.rpc("archive_family_tree", { p_tree_id: treeId, p_expected_version: parsed.data.expectedVersion });
   if (error?.message.includes("LAST_TREE")) return NextResponse.json({ error: "Không thể lưu trữ phả đồ cuối cùng." }, { status: 409 });
